@@ -7,6 +7,7 @@ import StatsCard from "./StatsCard";
 import UserCard from "./UserCard";
 import LevelFilter from "./LevelFilter";
 import SearchInput from "./SearchInput";
+import MemberDetailSheet from "./MemberDetailSheet";
 import { Users, Vote, Link2, Plus, BarChart3 } from "lucide-react";
 import type { User } from "@shared/schema";
 
@@ -25,6 +26,7 @@ interface DashboardViewProps {
 export default function DashboardView({ onNavigate }: DashboardViewProps) {
   const [search, setSearch] = useState("");
   const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
   const { data: stats, isLoading: statsLoading } = useQuery<Stats>({
     queryKey: ["/api/stats"],
@@ -161,7 +163,7 @@ export default function DashboardView({ onNavigate }: DashboardViewProps) {
                 inviteCount={0}
                 joinedAt={new Date(user.createdAt || Date.now())}
                 imageUrl={user.profileImageUrl || undefined}
-                onViewProfile={(id) => console.log("View profile:", id)}
+                onViewProfile={(id) => setSelectedMemberId(id)}
               />
             ))}
             {filteredUsers.length === 0 && (
@@ -170,6 +172,11 @@ export default function DashboardView({ onNavigate }: DashboardViewProps) {
           </div>
         )}
       </div>
+
+      <MemberDetailSheet
+        memberId={selectedMemberId}
+        onClose={() => setSelectedMemberId(null)}
+      />
     </div>
   );
 }
