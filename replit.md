@@ -44,6 +44,28 @@ Preferred communication style: Simple, everyday language.
 - **Basic info**: All users can see name/handle and level of visible members
 - **Enforcement**: These rules are enforced in `server/routes.ts` via `sanitizeUser()` and `filterAndSanitizeUsers()` helper functions
 
+### Level 5 Governance Rules
+Special voting requirements for Level 5 (Core) member changes:
+
+**Promotion to Level 5:**
+- 1 Level 5 user: Bootstrap mode - can directly promote 1 user without voting
+- 2 Level 5 users: Requires unanimous 2 votes from Level 5 members
+- 3+ Level 5 users: Requires 3 votes from Level 5 members
+
+**Demotion from Level 5:**
+- Cannot demote the last remaining Level 5 member
+- 2 Level 5 users: Requires unanimous 2 votes
+- 3+ Level 5 users: Requires 3 votes
+
+**Request Types:**
+- `PROMOTE`: Standard promotion (Level 4+ can vote)
+- `PROMOTE_TO_5`: Level 5 promotion (Level 5 only can vote)
+- `DEMOTE_FROM_5`: Level 5 demotion (Level 5 only can vote)
+
+**API Endpoints:**
+- `GET /api/level5-governance`: Returns governance status (level5Count, voteThreshold, canBootstrap)
+- `POST /api/level5-governance/bootstrap-promote`: Direct promotion when only 1 Level 5 exists
+
 ### Build System
 - **Development**: Vite dev server with HMR, tsx for server
 - **Production**: esbuild for server bundling, Vite for client build

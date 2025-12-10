@@ -275,12 +275,22 @@ export class DatabaseStorage implements IStorage {
     const votesFor = allVotes.filter(v => v.vote === "for").length;
 
     if (votesFor >= request.requiredVotes) {
-      // Approve promotion
+      // Determine the action type based on request type
+      const requestType = request.requestType || "PROMOTE";
+      let reason = `Promotion approved by vote (${votesFor} votes for)`;
+      
+      if (requestType === "DEMOTE_FROM_5") {
+        reason = `Level 5 demotion approved by vote (${votesFor} votes for)`;
+      } else if (requestType === "PROMOTE_TO_5") {
+        reason = `Level 5 promotion approved by vote (${votesFor} votes for)`;
+      }
+      
+      // Apply the level change
       await this.updateUserLevel(
         request.candidateUserId,
         request.proposedLevel,
         request.createdByUserId,
-        `Promotion approved by vote (${votesFor} votes for)`
+        reason
       );
 
       const [updated] = await db

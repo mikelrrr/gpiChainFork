@@ -158,12 +158,25 @@ export async function registerRoutes(
     }
   });
 
-  // Direct level change (Level 5 only)
+  // Direct level change (Level 5 only, non-Level-5 targets)
   app.post("/api/users/:id/level", isAuthenticated, requireLevel(5), async (req: any, res) => {
     try {
       const { newLevel, reason } = req.body;
       if (!newLevel || !reason) {
         return res.status(400).json({ message: "newLevel and reason are required" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Cannot directly change Level 5 users (must use governance process)
+      if (targetUser.level === 5 && newLevel !== 5) {
+        return res.status(400).json({ message: "Level 5 demotions require the governance voting process" });
+      }
+      if (newLevel === 5 && targetUser.level !== 5) {
+        return res.status(400).json({ message: "Level 5 promotions require the governance voting process" });
       }
       
       const user = await storage.updateUserLevel(
@@ -176,6 +189,65 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating user level:", error);
       res.status(500).json({ message: "Failed to update user level" });
+    }
+  });
+
+  // Level 5 governance info endpoint
+  app.get("/api/level5-governance", isAuthenticated, async (req: any, res) => {
+    try {
+      const level5Count = await storage.countLevel5Users();
+      const voteThreshold = await storage.getLevel5VoteThreshold();
+      const canBootstrap = await storage.canBootstrapPromoteToLevel5();
+      
+      res.json({
+        level5Count,
+        voteThreshold,
+        canBootstrap,
+        rules: {
+          description: canBootstrap 
+            ? "As the only Level 5, you can directly promote 1 user to Level 5 without voting."
+            : level5Count === 2
+              ? "With 2 Level 5 members, Level 5 changes require unanimous 2 votes."
+              : "With 3+ Level 5 members, Level 5 changes require 3 votes.",
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching governance info:", error);
+      res.status(500).json({ message: "Failed to fetch governance info" });
+    }
+  });
+
+  // Bootstrap direct promotion to Level 5 (only when there's exactly 1 Level 5)
+  app.post("/api/level5-governance/bootstrap-promote", isAuthenticated, requireLevel(5), async (req: any, res) => {
+    try {
+      const { candidateUserId, reason } = req.body;
+      if (!candidateUserId || !reason) {
+        return res.status(400).json({ message: "candidateUserId and reason are required" });
+      }
+      
+      const canBootstrap = await storage.canBootstrapPromoteToLevel5();
+      if (!canBootstrap) {
+        return res.status(400).json({ message: "Bootstrap promotion is only available when there is exactly 1 Level 5 member" });
+      }
+      
+      const candidate = await storage.getUser(candidateUserId);
+      if (!candidate) {
+        return res.status(404).json({ message: "Candidate not found" });
+      }
+      if (candidate.level === 5) {
+        return res.status(400).json({ message: "User is already Level 5" });
+      }
+      
+      const user = await storage.updateUserLevel(
+        candidateUserId,
+        5,
+        req.user.claims.sub,
+        `Bootstrap promotion to Level 5: ${reason}`
+      );
+      res.json(user);
+    } catch (error) {
+      console.error("Error bootstrap promoting:", error);
+      res.status(500).json({ message: "Failed to bootstrap promote to Level 5" });
     }
   });
 
@@ -248,14 +320,48 @@ export async function registerRoutes(
 
   app.post("/api/promotions", isAuthenticated, requireLevel(4), async (req: any, res) => {
     try {
+      const requestType = req.body.requestType || "PROMOTE";
+      const dbUser = req.dbUser;
+      
+      // Level 5 governance requests require Level 5
+      if ((requestType === "PROMOTE_TO_5" || requestType === "DEMOTE_FROM_5") && dbUser.level < 5) {
+        return res.status(403).json({ message: "Only Level 5 members can create Level 5 governance requests" });
+      }
+      
+      // Check if bootstrap should be used instead
+      if (requestType === "PROMOTE_TO_5") {
+        const canBootstrap = await storage.canBootstrapPromoteToLevel5();
+        if (canBootstrap) {
+          return res.status(400).json({ message: "Use bootstrap promotion when there is only 1 Level 5 member" });
+        }
+      }
+      
+      // Cannot demote last Level 5
+      if (requestType === "DEMOTE_FROM_5") {
+        const canDemote = await storage.canDemoteFromLevel5(req.body.candidateUserId);
+        if (!canDemote) {
+          return res.status(400).json({ message: "Cannot demote the last remaining Level 5 member" });
+        }
+      }
+      
+      // Get vote threshold for Level 5 governance
+      let requiredVotes = req.body.requiredVotes || 3;
+      let allowedVoterMinLevel = req.body.allowedVoterMinLevel || 4;
+      
+      if (requestType === "PROMOTE_TO_5" || requestType === "DEMOTE_FROM_5") {
+        requiredVotes = await storage.getLevel5VoteThreshold();
+        allowedVoterMinLevel = 5; // Only Level 5 can vote on Level 5 governance
+      }
+      
       const data = insertPromotionRequestSchema.parse({
         candidateUserId: req.body.candidateUserId,
         currentLevel: req.body.currentLevel,
         proposedLevel: req.body.proposedLevel,
         createdByUserId: req.user.claims.sub,
         justification: req.body.justification,
-        requiredVotes: req.body.requiredVotes || 3,
-        allowedVoterMinLevel: req.body.allowedVoterMinLevel || 4,
+        requestType,
+        requiredVotes,
+        allowedVoterMinLevel,
       });
       
       const request = await storage.createPromotionRequest(data);

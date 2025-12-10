@@ -58,7 +58,10 @@ export default function PromotionsView() {
     return promo.votes.some(v => v.voterUserId === user?.id);
   };
 
-  const canUserVote = user && user.level >= 4;
+  const canUserVote = (promo: PromotionWithDetails) => {
+    if (!user) return false;
+    return user.level >= promo.allowedVoterMinLevel;
+  };
 
   return (
     <div className="space-y-6">
@@ -98,8 +101,10 @@ export default function PromotionsView() {
                 votesAgainst={promotion.votesAgainst}
                 requiredVotes={promotion.requiredVotes}
                 status={promotion.status as "open" | "approved" | "rejected" | "expired"}
+                requestType={promotion.requestType as "PROMOTE" | "PROMOTE_TO_5" | "DEMOTE_FROM_5" | undefined}
+                allowedVoterMinLevel={promotion.allowedVoterMinLevel}
                 hasVoted={hasUserVoted(promotion)}
-                canVote={canUserVote}
+                canVote={canUserVote(promotion)}
                 onVote={handleVote}
               />
             ))
@@ -129,6 +134,8 @@ export default function PromotionsView() {
                 votesAgainst={promotion.votesAgainst}
                 requiredVotes={promotion.requiredVotes}
                 status={promotion.status as "open" | "approved" | "rejected" | "expired"}
+                requestType={promotion.requestType as "PROMOTE" | "PROMOTE_TO_5" | "DEMOTE_FROM_5" | undefined}
+                allowedVoterMinLevel={promotion.allowedVoterMinLevel}
                 hasVoted={hasUserVoted(promotion)}
                 canVote={false}
                 onVote={handleVote}

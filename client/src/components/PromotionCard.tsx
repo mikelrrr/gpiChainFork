@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowRight, ThumbsUp, ThumbsDown, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowRight, ThumbsUp, ThumbsDown, ChevronDown, ChevronUp, Shield, ArrowDown } from "lucide-react";
 import UserAvatar from "./UserAvatar";
 import LevelBadge from "./LevelBadge";
 import { format } from "date-fns";
@@ -23,6 +23,8 @@ interface PromotionCardProps {
   votesAgainst: number;
   requiredVotes: number;
   status: "open" | "approved" | "rejected" | "expired";
+  requestType?: "PROMOTE" | "PROMOTE_TO_5" | "DEMOTE_FROM_5";
+  allowedVoterMinLevel?: number;
   hasVoted?: boolean;
   canVote?: boolean;
   onVote?: (id: string, vote: "for" | "against", comment?: string) => void;
@@ -48,6 +50,8 @@ export default function PromotionCard({
   votesAgainst,
   requiredVotes,
   status,
+  requestType = "PROMOTE",
+  allowedVoterMinLevel = 4,
   hasVoted = false,
   canVote = true,
   onVote,
@@ -56,7 +60,9 @@ export default function PromotionCard({
   const [comment, setComment] = useState("");
   const [voting, setVoting] = useState(false);
   
-  const progressPercent = Math.min((votesFor / requiredVotes) * 100, 100);
+  const progressPercent = requiredVotes > 0 ? Math.min((votesFor / requiredVotes) * 100, 100) : 0;
+  const isLevel5Governance = requestType === "PROMOTE_TO_5" || requestType === "DEMOTE_FROM_5";
+  const isDemotion = requestType === "DEMOTE_FROM_5";
 
   const handleVote = (vote: "for" | "against") => {
     setVoting(true);
@@ -75,6 +81,18 @@ export default function PromotionCard({
             <Badge className={cn("text-xs border-0", statusStyles[status])}>
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </Badge>
+            {isLevel5Governance && (
+              <Badge 
+                variant={isDemotion ? "destructive" : "default"}
+                className="text-xs gap-1"
+              >
+                {isDemotion ? (
+                  <><ArrowDown className="h-3 w-3" />Demotion</>
+                ) : (
+                  <><Shield className="h-3 w-3" />Level 5</>
+                )}
+              </Badge>
+            )}
           </div>
           
           <div className="flex items-center gap-2 mt-1">
