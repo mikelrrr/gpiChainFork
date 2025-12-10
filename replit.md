@@ -61,6 +61,28 @@ Preferred communication style: Simple, everyday language.
 - **API Enforcement**: All endpoints in `server/routes.ts` use `sanitizeUser()` and `filterAndSanitizeUsers()` helper functions
 - **Frontend Enforcement**: LevelFilter component accepts `maxVisibleLevel` prop to only show appropriate level options
 
+### Promotion/Demotion Voting Rules
+
+**Request Types:**
+- `PROMOTE`: Standard promotion request
+- `DEMOTE`: Standard demotion request (configurable per level)
+- `PROMOTE_TO_5`: Special Level 5 promotion (Level 5 only)
+- `DEMOTE_FROM_5`: Special Level 5 demotion (Level 5 only)
+
+**Who Can Create Requests:**
+- Creator must have `creator.level >= candidate.level`
+- You can only create requests for members at or below your level
+
+**Who Can Vote:**
+- Voter must meet BOTH conditions:
+  - `voter.level >= request.allowedVoterMinLevel`
+  - `voter.level >= candidate.currentLevel`
+- In other words: you can only influence your level or lower, never people above you
+
+**Default Voting Thresholds:**
+- Regular promotions/demotions: `allowedVoterMinLevel` = candidate's current level
+- Level 5 governance: `allowedVoterMinLevel` = 5 (only Level 5 can vote)
+
 ### Level 5 Governance Rules
 Special voting requirements for Level 5 (Core) member changes:
 
@@ -73,11 +95,6 @@ Special voting requirements for Level 5 (Core) member changes:
 - Cannot demote the last remaining Level 5 member
 - 2 Level 5 users: Requires unanimous 2 votes
 - 3+ Level 5 users: Requires 3 votes
-
-**Request Types:**
-- `PROMOTE`: Standard promotion (Level 4+ can vote)
-- `PROMOTE_TO_5`: Level 5 promotion (Level 5 only can vote)
-- `DEMOTE_FROM_5`: Level 5 demotion (Level 5 only can vote)
 
 **API Endpoints:**
 - `GET /api/level5-governance`: Returns governance status (level5Count, voteThreshold, canBootstrap)

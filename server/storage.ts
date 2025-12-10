@@ -309,8 +309,21 @@ export class DatabaseStorage implements IStorage {
       const requestType = request.requestType || "PROMOTE";
       let reason = `Promotion approved by vote (${votesFor} votes for)`;
       
-      if (requestType === "DEMOTE_FROM_5") {
-        reason = `Level 5 demotion approved by vote (${votesFor} votes for)`;
+      // Defensive check: ensure level change matches request type
+      const isPromotion = requestType === "PROMOTE" || requestType === "PROMOTE_TO_5";
+      const isDemotion = requestType === "DEMOTE" || requestType === "DEMOTE_FROM_5";
+      
+      if (isPromotion && request.proposedLevel <= request.currentLevel) {
+        console.error(`Invalid promotion: proposedLevel ${request.proposedLevel} is not greater than currentLevel ${request.currentLevel}`);
+        return request; // Don't apply invalid level change
+      }
+      if (isDemotion && request.proposedLevel >= request.currentLevel) {
+        console.error(`Invalid demotion: proposedLevel ${request.proposedLevel} is not less than currentLevel ${request.currentLevel}`);
+        return request; // Don't apply invalid level change
+      }
+      
+      if (isDemotion) {
+        reason = `Demotion approved by vote (${votesFor} votes for)`;
       } else if (requestType === "PROMOTE_TO_5") {
         reason = `Level 5 promotion approved by vote (${votesFor} votes for)`;
       }

@@ -541,13 +541,53 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/promotions", isAuthenticated, requireLevel(4), async (req: any, res) => {
+  app.post("/api/promotions", isAuthenticated, async (req: any, res) => {
     try {
       const requestType = req.body.requestType || "PROMOTE";
-      const dbUser = req.dbUser;
+      const userId = req.user.claims.sub;
+      const creator = await storage.getUser(userId);
+      
+      if (!creator) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
+      // Get the candidate to check levels
+      const candidate = await storage.getUser(req.body.candidateUserId);
+      if (!candidate) {
+        return res.status(404).json({ message: "Candidate not found" });
+      }
+      
+      // Validate that supplied currentLevel matches actual candidate level
+      const suppliedCurrentLevel = parseInt(req.body.currentLevel);
+      if (suppliedCurrentLevel !== candidate.level) {
+        return res.status(400).json({ message: "Current level does not match candidate's actual level" });
+      }
+      
+      // Validate proposedLevel makes sense for the request type
+      const proposedLevel = parseInt(req.body.proposedLevel);
+      if (requestType === "PROMOTE" || requestType === "PROMOTE_TO_5") {
+        if (proposedLevel <= candidate.level) {
+          return res.status(400).json({ message: "Promotion must increase the level" });
+        }
+        if (proposedLevel > 5) {
+          return res.status(400).json({ message: "Level cannot exceed 5" });
+        }
+      } else if (requestType === "DEMOTE" || requestType === "DEMOTE_FROM_5") {
+        if (proposedLevel >= candidate.level) {
+          return res.status(400).json({ message: "Demotion must decrease the level" });
+        }
+        if (proposedLevel < 1) {
+          return res.status(400).json({ message: "Level cannot be less than 1" });
+        }
+      }
+      
+      // Rule: Creator level must be >= candidate level
+      if (creator.level < candidate.level) {
+        return res.status(403).json({ message: "You can only create requests for members at or below your level" });
+      }
       
       // Level 5 governance requests require Level 5
-      if ((requestType === "PROMOTE_TO_5" || requestType === "DEMOTE_FROM_5") && dbUser.level < 5) {
+      if ((requestType === "PROMOTE_TO_5" || requestType === "DEMOTE_FROM_5") && creator.level < 5) {
         return res.status(403).json({ message: "Only Level 5 members can create Level 5 governance requests" });
       }
       
@@ -567,9 +607,9 @@ export async function registerRoutes(
         }
       }
       
-      // Get vote threshold for Level 5 governance
+      // Determine required votes and allowed voter min level based on request type
       let requiredVotes = req.body.requiredVotes || 3;
-      let allowedVoterMinLevel = req.body.allowedVoterMinLevel || 4;
+      let allowedVoterMinLevel = candidate.level; // Default: voters must be at candidate's level or above
       
       if (requestType === "PROMOTE_TO_5" || requestType === "DEMOTE_FROM_5") {
         requiredVotes = await storage.getLevel5VoteThreshold();
@@ -578,9 +618,9 @@ export async function registerRoutes(
       
       const data = insertPromotionRequestSchema.parse({
         candidateUserId: req.body.candidateUserId,
-        currentLevel: req.body.currentLevel,
-        proposedLevel: req.body.proposedLevel,
-        createdByUserId: req.user.claims.sub,
+        currentLevel: candidate.level, // Use actual candidate level, not supplied value
+        proposedLevel: proposedLevel,
+        createdByUserId: userId,
         justification: req.body.justification,
         requestType,
         requiredVotes,
@@ -600,11 +640,15 @@ export async function registerRoutes(
 
   // === Vote endpoints ===
   
-  app.post("/api/promotions/:id/vote", isAuthenticated, requireLevel(4), async (req: any, res) => {
+  app.post("/api/promotions/:id/vote", isAuthenticated, async (req: any, res) => {
     try {
       const promotionId = req.params.id;
       const userId = req.user.claims.sub;
-      const dbUser = req.dbUser;
+      const voter = await storage.getUser(userId);
+      
+      if (!voter) {
+        return res.status(401).json({ message: "User not found" });
+      }
       
       // Get the promotion to check requirements
       const promotion = await storage.getPromotionRequestWithDetails(promotionId);
@@ -616,15 +660,21 @@ export async function registerRoutes(
         return res.status(400).json({ message: "This promotion is no longer open for voting" });
       }
       
-      // Check if user level meets the promotion's required voter level
-      if (dbUser.level < promotion.allowedVoterMinLevel) {
-        return res.status(403).json({ message: `Level ${promotion.allowedVoterMinLevel}+ required to vote on this promotion` });
+      // Rule 1: Voter level must be >= allowedVoterMinLevel
+      if (voter.level < promotion.allowedVoterMinLevel) {
+        return res.status(403).json({ message: `Level ${promotion.allowedVoterMinLevel}+ required to vote on this request` });
+      }
+      
+      // Rule 2: Voter level must be >= candidate's current level
+      // (You can only influence your level or lower, never people above you)
+      if (voter.level < promotion.currentLevel) {
+        return res.status(403).json({ message: "You can only vote on requests for members at or below your level" });
       }
       
       // Check if already voted
       const hasVoted = await storage.hasUserVoted(promotionId, userId);
       if (hasVoted) {
-        return res.status(400).json({ message: "You have already voted on this promotion" });
+        return res.status(400).json({ message: "You have already voted on this request" });
       }
       
       // Validate vote data
@@ -637,10 +687,10 @@ export async function registerRoutes(
       
       await storage.createVote(voteData);
       
-      // Process votes (check if promotion should be approved)
+      // Process votes (check if request should be approved)
       const updatedRequest = await storage.processPromotionVotes(promotionId);
       
-      res.json({ success: true, promotionStatus: updatedRequest.status });
+      res.json({ success: true, requestStatus: updatedRequest.status });
     } catch (error) {
       console.error("Error voting:", error);
       if (error instanceof z.ZodError) {
