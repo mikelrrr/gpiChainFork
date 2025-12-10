@@ -52,9 +52,14 @@ Preferred communication style: Simple, everyday language.
 
 ### Visibility Rules (enforced at API and UI levels)
 - **Level-based visibility**: Users can only see members whose level is ≤ their own level
+- **Complete information hiding**: Higher levels are completely hidden - users don't know they exist
 - **Email privacy**: Emails are only visible to Level 5 users. No one below Level 5 can see any email addresses
-- **Basic info**: All users can see name/handle and level of visible members
-- **Enforcement**: These rules are enforced in `server/routes.ts` via `sanitizeUser()` and `filterAndSanitizeUsers()` helper functions
+- **Stats filtering**: totalMembers, inviteCount, and levelDistribution only include visible-level data
+- **Promotion filtering**: Promotions are only visible if both current and proposed levels are within viewer's range
+- **Vote filtering**: Votes from higher-level users are filtered out to prevent information leakage
+- **Inviter privacy**: If a user's inviter is above their level, the inviter info is hidden
+- **API Enforcement**: All endpoints in `server/routes.ts` use `sanitizeUser()` and `filterAndSanitizeUsers()` helper functions
+- **Frontend Enforcement**: LevelFilter component accepts `maxVisibleLevel` prop to only show appropriate level options
 
 ### Level 5 Governance Rules
 Special voting requirements for Level 5 (Core) member changes:
