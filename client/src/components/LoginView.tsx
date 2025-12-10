@@ -10,6 +10,8 @@ interface LoginViewProps {
 }
 
 export default function LoginView({ onLogin, inviteToken, inviterName }: LoginViewProps) {
+  const isInviteFlow = !!inviteToken;
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-background">
       <div className="w-full max-w-md space-y-6">
@@ -19,7 +21,7 @@ export default function LoginView({ onLogin, inviteToken, inviterName }: LoginVi
           </div>
           <h1 className="text-2xl font-bold">Community HQ</h1>
           <p className="text-muted-foreground">
-            {inviteToken 
+            {isInviteFlow 
               ? "You've been invited to join our community"
               : "Membership management for your creative community"
             }
@@ -43,10 +45,10 @@ export default function LoginView({ onLogin, inviteToken, inviterName }: LoginVi
         <Card>
           <CardHeader className="text-center pb-4">
             <CardTitle className="text-lg">
-              {inviteToken ? "Accept Invitation" : "Sign In"}
+              {isInviteFlow ? "Accept Invitation" : "Sign In"}
             </CardTitle>
             <CardDescription>
-              {inviteToken 
+              {isInviteFlow 
                 ? "Sign in with Google to join the community"
                 : "Sign in to access your membership dashboard"
               }
@@ -65,7 +67,7 @@ export default function LoginView({ onLogin, inviteToken, inviterName }: LoginVi
           </CardContent>
         </Card>
 
-        {inviteToken && (
+        {isInviteFlow && (
           <Card>
             <CardContent className="p-4 space-y-3">
               <p className="text-sm font-medium">By joining, you agree to:</p>
@@ -88,7 +90,7 @@ export default function LoginView({ onLogin, inviteToken, inviterName }: LoginVi
         )}
 
         <p className="text-center text-xs text-muted-foreground">
-          {inviteToken 
+          {isInviteFlow 
             ? "This is an invite-only community. Your invitation link is valid for one use."
             : "Access is by invitation only. Contact an existing member for an invite."
           }

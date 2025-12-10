@@ -1,80 +1,64 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import PromotionCard from "./PromotionCard";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/useAuth";
+import type { PromotionRequest, User, Vote } from "@shared/schema";
 
-// todo: remove mock functionality
-const mockPromotions = [
-  {
-    id: "1",
-    candidateName: "Alice Johnson",
-    currentLevel: 2 as const,
-    proposedLevel: 3 as const,
-    createdByName: "Bob Smith",
-    justification: "Alice has consistently contributed to community events and helped onboard 15 new members. She demonstrates excellent leadership qualities.",
-    createdAt: new Date("2024-12-05"),
-    votesFor: 2,
-    votesAgainst: 0,
-    requiredVotes: 3,
-    status: "open" as const,
-  },
-  {
-    id: "2",
-    candidateName: "Diana Lee",
-    currentLevel: 1 as const,
-    proposedLevel: 2 as const,
-    createdByName: "Carlos Diaz",
-    justification: "Diana has been an active member for 6 months and invited 5 new members who are all active contributors.",
-    createdAt: new Date("2024-12-08"),
-    votesFor: 1,
-    votesAgainst: 1,
-    requiredVotes: 3,
-    status: "open" as const,
-  },
-  {
-    id: "3",
-    candidateName: "Carlos Diaz",
-    currentLevel: 3 as const,
-    proposedLevel: 4 as const,
-    createdByName: "Eve Wilson",
-    justification: "Carlos has shown exceptional leadership in organizing weekly meetups and mentoring new members.",
-    createdAt: new Date("2024-12-01"),
-    votesFor: 3,
-    votesAgainst: 1,
-    requiredVotes: 3,
-    status: "approved" as const,
-  },
-  {
-    id: "4",
-    candidateName: "Frank Miller",
-    currentLevel: 2 as const,
-    proposedLevel: 3 as const,
-    createdByName: "Bob Smith",
-    justification: "Frank has potential but needs more time to prove himself.",
-    createdAt: new Date("2024-11-20"),
-    votesFor: 1,
-    votesAgainst: 3,
-    requiredVotes: 3,
-    status: "rejected" as const,
-  },
-];
+interface PromotionWithDetails extends PromotionRequest {
+  candidate: User;
+  createdBy: User;
+  votes: Vote[];
+  votesFor: number;
+  votesAgainst: number;
+}
 
 export default function PromotionsView() {
   const [tab, setTab] = useState("open");
-  const [votedIds, setVotedIds] = useState<Set<string>>(new Set(["3", "4"]));
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  const { data: promotions = [], isLoading } = useQuery<PromotionWithDetails[]>({
+    queryKey: ["/api/promotions"],
+  });
+
+  const voteMutation = useMutation({
+    mutationFn: async ({ id, vote, comment }: { id: string; vote: "for" | "against"; comment?: string }) => {
+      const response = await apiRequest("POST", `/api/promotions/${id}/vote`, { vote, comment });
+      return response.json();
+    },
+    onSuccess: (data, { vote }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/promotions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      toast({
+        title: "Vote Submitted",
+        description: `You voted ${vote} the promotion.${data.promotionStatus === "approved" ? " The promotion was approved!" : ""}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Vote Failed",
+        description: error.message || "Failed to submit vote",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleVote = (id: string, vote: "for" | "against", comment?: string) => {
-    console.log("Vote submitted:", { id, vote, comment });
-    setVotedIds(prev => new Set(Array.from(prev).concat(id)));
-    toast({
-      title: "Vote Submitted",
-      description: `You voted ${vote} the promotion${comment ? " with a comment" : ""}.`,
-    });
+    voteMutation.mutate({ id, vote, comment });
   };
 
-  const openPromotions = mockPromotions.filter(p => p.status === "open");
-  const closedPromotions = mockPromotions.filter(p => p.status !== "open");
+  const openPromotions = promotions.filter(p => p.status === "open");
+  const closedPromotions = promotions.filter(p => p.status !== "open");
+
+  const hasUserVoted = (promo: PromotionWithDetails) => {
+    return promo.votes.some(v => v.voterUserId === user?.id);
+  };
+
+  const canUserVote = user && user.level >= 4;
 
   return (
     <div className="space-y-6">
@@ -91,15 +75,31 @@ export default function PromotionsView() {
         </TabsList>
 
         <TabsContent value="open" className="space-y-3 mt-4">
-          {openPromotions.length === 0 ? (
+          {isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-32" />
+              <Skeleton className="h-32" />
+            </div>
+          ) : openPromotions.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No open promotion requests</p>
           ) : (
             openPromotions.map(promotion => (
               <PromotionCard
                 key={promotion.id}
-                {...promotion}
-                hasVoted={votedIds.has(promotion.id)}
-                canVote={true}
+                id={promotion.id}
+                candidateName={`${promotion.candidate.firstName || ""} ${promotion.candidate.lastName || ""}`.trim() || "Unknown"}
+                candidateImage={promotion.candidate.profileImageUrl || undefined}
+                currentLevel={promotion.currentLevel as 1 | 2 | 3 | 4 | 5}
+                proposedLevel={promotion.proposedLevel as 1 | 2 | 3 | 4 | 5}
+                createdByName={`${promotion.createdBy.firstName || ""} ${promotion.createdBy.lastName || ""}`.trim() || "Unknown"}
+                justification={promotion.justification}
+                createdAt={new Date(promotion.createdAt || Date.now())}
+                votesFor={promotion.votesFor}
+                votesAgainst={promotion.votesAgainst}
+                requiredVotes={promotion.requiredVotes}
+                status={promotion.status as "open" | "approved" | "rejected" | "expired"}
+                hasVoted={hasUserVoted(promotion)}
+                canVote={canUserVote}
                 onVote={handleVote}
               />
             ))
@@ -107,14 +107,29 @@ export default function PromotionsView() {
         </TabsContent>
 
         <TabsContent value="closed" className="space-y-3 mt-4">
-          {closedPromotions.length === 0 ? (
+          {isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-32" />
+            </div>
+          ) : closedPromotions.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No closed promotions yet</p>
           ) : (
             closedPromotions.map(promotion => (
               <PromotionCard
                 key={promotion.id}
-                {...promotion}
-                hasVoted={votedIds.has(promotion.id)}
+                id={promotion.id}
+                candidateName={`${promotion.candidate.firstName || ""} ${promotion.candidate.lastName || ""}`.trim() || "Unknown"}
+                candidateImage={promotion.candidate.profileImageUrl || undefined}
+                currentLevel={promotion.currentLevel as 1 | 2 | 3 | 4 | 5}
+                proposedLevel={promotion.proposedLevel as 1 | 2 | 3 | 4 | 5}
+                createdByName={`${promotion.createdBy.firstName || ""} ${promotion.createdBy.lastName || ""}`.trim() || "Unknown"}
+                justification={promotion.justification}
+                createdAt={new Date(promotion.createdAt || Date.now())}
+                votesFor={promotion.votesFor}
+                votesAgainst={promotion.votesAgainst}
+                requiredVotes={promotion.requiredVotes}
+                status={promotion.status as "open" | "approved" | "rejected" | "expired"}
+                hasVoted={hasUserVoted(promotion)}
                 canVote={false}
                 onVote={handleVote}
               />
