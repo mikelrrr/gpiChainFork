@@ -36,6 +36,11 @@ export interface IStorage {
   canBootstrapPromoteToLevel5(): Promise<boolean>;
   canDemoteFromLevel5(targetUserId: string): Promise<boolean>;
   
+  // Username operations
+  isUsernameAvailable(username: string, excludeUserId?: string): Promise<boolean>;
+  updateUsername(userId: string, newUsername: string): Promise<User>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  
   // Invite link operations
   createInviteLink(userId: string): Promise<InviteLink>;
   getInviteLinkByToken(token: string): Promise<InviteLink | undefined>;
@@ -158,6 +163,31 @@ export class DatabaseStorage implements IStorage {
     // Cannot demote the last remaining Level 5
     if (level5Count <= 1) return false;
     return true;
+  }
+
+  // Username operations
+  async isUsernameAvailable(username: string, excludeUserId?: string): Promise<boolean> {
+    const normalizedUsername = username.toLowerCase().trim();
+    const existing = await db.select().from(users).where(eq(users.username, normalizedUsername));
+    if (existing.length === 0) return true;
+    if (excludeUserId && existing.length === 1 && existing[0].id === excludeUserId) return true;
+    return false;
+  }
+
+  async updateUsername(userId: string, newUsername: string): Promise<User> {
+    const normalizedUsername = newUsername.toLowerCase().trim();
+    const [updated] = await db
+      .update(users)
+      .set({ username: normalizedUsername, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const normalizedUsername = username.toLowerCase().trim();
+    const [user] = await db.select().from(users).where(eq(users.username, normalizedUsername));
+    return user;
   }
 
   // Invite link operations
