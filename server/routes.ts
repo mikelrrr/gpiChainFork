@@ -2,8 +2,27 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireLevel } from "./replitAuth";
-import { insertPromotionRequestSchema, insertVoteSchema } from "@shared/schema";
+import { insertPromotionRequestSchema, insertVoteSchema, type User } from "@shared/schema";
 import { z } from "zod";
+
+// Helper to sanitize user data based on viewer's level
+function sanitizeUser(user: User, viewerLevel: number): Partial<User> {
+  // Level 5 can see everything
+  if (viewerLevel >= 5) {
+    return user;
+  }
+  
+  // Others can see basic info but not email
+  const { email, ...rest } = user;
+  return rest;
+}
+
+// Helper to filter and sanitize users list
+function filterAndSanitizeUsers(users: User[], viewerLevel: number): Partial<User>[] {
+  return users
+    .filter(u => u.level <= viewerLevel) // Only show users at same level or below
+    .map(u => sanitizeUser(u, viewerLevel));
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -66,28 +85,55 @@ export async function registerRoutes(
 
   // === User endpoints ===
   
-  app.get("/api/users", isAuthenticated, async (req, res) => {
+  app.get("/api/users", isAuthenticated, async (req: any, res) => {
     try {
+      const requestingUser = await storage.getUser(req.user.claims.sub);
+      if (!requestingUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
       const level = req.query.level ? parseInt(req.query.level as string) : undefined;
-      const users = await storage.getUsersByLevel(level);
-      res.json(users);
+      const allUsers = await storage.getUsersByLevel(level);
+      
+      // Filter users to only show those at or below the viewer's level
+      // and sanitize based on viewer's level (hide emails unless Level 5)
+      const visibleUsers = filterAndSanitizeUsers(allUsers, requestingUser.level);
+      
+      res.json(visibleUsers);
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
     }
   });
 
-  app.get("/api/users/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/users/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const requestingUser = await storage.getUser(req.user.claims.sub);
+      if (!requestingUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
       const user = await storage.getUserWithInviter(req.params.id);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Check visibility: can only see users at or below your level
+      if (user.level > requestingUser.level) {
+        return res.status(403).json({ message: "You cannot view this user's profile" });
+      }
+      
       const invitees = await storage.getInvitees(req.params.id);
+      
+      // Sanitize the user, inviter, and invitees based on viewer's level
+      const sanitizedUser = sanitizeUser(user, requestingUser.level);
+      const sanitizedInviter = user.inviter ? sanitizeUser(user.inviter, requestingUser.level) : undefined;
+      const sanitizedInvitees = filterAndSanitizeUsers(invitees, requestingUser.level);
+      
       res.json({
-        ...user,
-        invitees,
+        ...sanitizedUser,
+        inviter: sanitizedInviter,
+        invitees: sanitizedInvitees,
         inviteCount: invitees.length,
       });
     } catch (error) {
@@ -96,10 +142,16 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/users/:id/invitees", isAuthenticated, async (req, res) => {
+  app.get("/api/users/:id/invitees", isAuthenticated, async (req: any, res) => {
     try {
+      const requestingUser = await storage.getUser(req.user.claims.sub);
+      if (!requestingUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
       const invitees = await storage.getInvitees(req.params.id);
-      res.json(invitees);
+      const sanitizedInvitees = filterAndSanitizeUsers(invitees, requestingUser.level);
+      res.json(sanitizedInvitees);
     } catch (error) {
       console.error("Error fetching invitees:", error);
       res.status(500).json({ message: "Failed to fetch invitees" });

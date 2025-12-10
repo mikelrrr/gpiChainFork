@@ -117,7 +117,7 @@ export default function MemberDetailSheet({ memberId, onClose }: MemberDetailShe
                 size="lg"
               />
               <h2 className="text-xl font-bold mt-4">{displayName}</h2>
-              <p className="text-sm text-muted-foreground">{member.email}</p>
+              {member.email && <p className="text-sm text-muted-foreground">{member.email}</p>}
               <div className="flex items-center gap-2 mt-2">
                 <LevelBadge level={member.level as 1 | 2 | 3 | 4 | 5} />
                 <StatusDot status={member.status as "active" | "suspended" | "expelled"} />

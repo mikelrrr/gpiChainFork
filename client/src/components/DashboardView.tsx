@@ -157,7 +157,7 @@ export default function DashboardView({ onNavigate }: DashboardViewProps) {
                 key={user.id}
                 id={user.id}
                 name={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown"}
-                email={user.email || ""}
+                email={user.email || undefined}
                 level={user.level as 1 | 2 | 3 | 4 | 5}
                 status={user.status as "active" | "suspended" | "expelled"}
                 inviteCount={0}

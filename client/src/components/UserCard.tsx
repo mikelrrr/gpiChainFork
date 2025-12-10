@@ -11,7 +11,7 @@ import { format } from "date-fns";
 interface UserCardProps {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   level: 1 | 2 | 3 | 4 | 5;
   status: "active" | "suspended" | "expelled";
   invitedBy?: string;
@@ -51,7 +51,7 @@ export default function UserCard({
             <span className="font-medium truncate" data-testid={`text-username-${id}`}>{name}</span>
             <LevelBadge level={level} size="sm" />
           </div>
-          <p className="text-sm text-muted-foreground truncate">{email}</p>
+          {email && <p className="text-sm text-muted-foreground truncate">{email}</p>}
         </div>
 
         <Button

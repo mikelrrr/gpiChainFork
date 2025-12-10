@@ -38,6 +38,12 @@ Preferred communication style: Simple, everyday language.
 - **Votes**: Voting system for promotion approvals
 - **User Level History**: Audit trail for level changes
 
+### Visibility Rules (enforced at API and UI levels)
+- **Level-based visibility**: Users can only see members whose level is ≤ their own level
+- **Email privacy**: Emails are only visible to Level 5 users. No one below Level 5 can see any email addresses
+- **Basic info**: All users can see name/handle and level of visible members
+- **Enforcement**: These rules are enforced in `server/routes.ts` via `sanitizeUser()` and `filterAndSanitizeUsers()` helper functions
+
 ### Build System
 - **Development**: Vite dev server with HMR, tsx for server
 - **Production**: esbuild for server bundling, Vite for client build
