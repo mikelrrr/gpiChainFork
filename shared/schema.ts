@@ -17,6 +17,7 @@ export const userStatusEnum = pgEnum("user_status", ["active", "suspended", "exp
 export const inviteLinkStatusEnum = pgEnum("invite_link_status", ["active", "disabled", "expired", "used"]);
 export const promotionStatusEnum = pgEnum("promotion_status", ["open", "approved", "rejected", "expired"]);
 export const voteTypeEnum = pgEnum("vote_type", ["for", "against"]);
+export const requestTypeEnum = pgEnum("request_type", ["PROMOTE", "PROMOTE_TO_5", "DEMOTE_FROM_5"]);
 
 // Session storage table - Required for Replit Auth
 export const sessions = pgTable(
@@ -64,6 +65,7 @@ export const promotionRequests = pgTable("promotion_requests", {
   currentLevel: integer("current_level").notNull(),
   proposedLevel: integer("proposed_level").notNull(),
   createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id),
+  requestType: requestTypeEnum("request_type").notNull().default("PROMOTE"),
   status: promotionStatusEnum("status").notNull().default("open"),
   requiredVotes: integer("required_votes").notNull().default(3),
   allowedVoterMinLevel: integer("allowed_voter_min_level").notNull().default(4),
