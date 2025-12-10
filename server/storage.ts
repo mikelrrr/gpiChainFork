@@ -30,6 +30,12 @@ export interface IStorage {
   getInvitees(userId: string): Promise<User[]>;
   updateUserLevel(userId: string, newLevel: number, changedByUserId: string, reason: string): Promise<User>;
   
+  // Level 5 governance helpers
+  countLevel5Users(): Promise<number>;
+  getLevel5VoteThreshold(): Promise<number>;
+  canBootstrapPromoteToLevel5(): Promise<boolean>;
+  canDemoteFromLevel5(targetUserId: string): Promise<boolean>;
+  
   // Invite link operations
   createInviteLink(userId: string): Promise<InviteLink>;
   getInviteLinkByToken(token: string): Promise<InviteLink | undefined>;
@@ -127,6 +133,31 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updated;
+  }
+
+  // Level 5 governance helpers
+  async countLevel5Users(): Promise<number> {
+    const [result] = await db.select({ count: count() }).from(users).where(eq(users.level, 5));
+    return result?.count || 0;
+  }
+
+  async getLevel5VoteThreshold(): Promise<number> {
+    const level5Count = await this.countLevel5Users();
+    if (level5Count <= 1) return 0; // Bootstrap mode - no voting required
+    if (level5Count === 2) return 2; // Unanimous
+    return 3; // 3 or more Level 5s
+  }
+
+  async canBootstrapPromoteToLevel5(): Promise<boolean> {
+    const level5Count = await this.countLevel5Users();
+    return level5Count === 1;
+  }
+
+  async canDemoteFromLevel5(targetUserId: string): Promise<boolean> {
+    const level5Count = await this.countLevel5Users();
+    // Cannot demote the last remaining Level 5
+    if (level5Count <= 1) return false;
+    return true;
   }
 
   // Invite link operations
