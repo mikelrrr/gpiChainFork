@@ -4,9 +4,8 @@ import { cn } from "@/lib/utils";
 interface LevelFilterProps {
   selectedLevels: number[];
   onToggleLevel: (level: number) => void;
+  maxVisibleLevel?: number;
 }
-
-const levels = [1, 2, 3, 4, 5];
 
 const levelColors: Record<number, { active: string; inactive: string }> = {
   1: { 
@@ -31,10 +30,13 @@ const levelColors: Record<number, { active: string; inactive: string }> = {
   },
 };
 
-export default function LevelFilter({ selectedLevels, onToggleLevel }: LevelFilterProps) {
+export default function LevelFilter({ selectedLevels, onToggleLevel, maxVisibleLevel = 5 }: LevelFilterProps) {
+  // Only show levels up to the user's max visible level
+  const visibleLevels = [1, 2, 3, 4, 5].filter(l => l <= maxVisibleLevel);
+  
   return (
     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" data-testid="filter-levels">
-      {levels.map((level) => {
+      {visibleLevels.map((level) => {
         const isSelected = selectedLevels.includes(level);
         return (
           <Badge

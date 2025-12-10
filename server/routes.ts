@@ -5,9 +5,20 @@ import { setupAuth, isAuthenticated, requireLevel, completeRegistration } from "
 import { insertPromotionRequestSchema, insertVoteSchema, type User } from "@shared/schema";
 import { z } from "zod";
 
+// Check if viewer can see target user (target level must be <= viewer level)
+function canViewerSeeUser(targetLevel: number, viewerLevel: number): boolean {
+  return targetLevel <= viewerLevel;
+}
+
 // Helper to sanitize user data based on viewer's level
-function sanitizeUser(user: User, viewerLevel: number): Partial<User> {
-  // Level 5 can see everything
+// Returns null if user should not be visible to viewer
+function sanitizeUser(user: User, viewerLevel: number): Partial<User> | null {
+  // User at higher level than viewer - completely hidden
+  if (user.level > viewerLevel) {
+    return null;
+  }
+  
+  // Level 5 can see everything about users at their level or below
   if (viewerLevel >= 5) {
     return user;
   }
@@ -17,11 +28,22 @@ function sanitizeUser(user: User, viewerLevel: number): Partial<User> {
   return rest;
 }
 
-// Helper to filter and sanitize users list
+// Helper to filter and sanitize users list - only returns visible users
 function filterAndSanitizeUsers(users: User[], viewerLevel: number): Partial<User>[] {
   return users
     .filter(u => u.level <= viewerLevel) // Only show users at same level or below
-    .map(u => sanitizeUser(u, viewerLevel));
+    .map(u => sanitizeUser(u, viewerLevel))
+    .filter((u): u is Partial<User> => u !== null);
+}
+
+// Filter level distribution to only show levels <= viewer level
+function filterLevelDistribution(distribution: { level: number; count: number }[], viewerLevel: number): { level: number; count: number }[] {
+  return distribution.filter(d => d.level <= viewerLevel);
+}
+
+// Get max visible level for a viewer (what they're allowed to see/know about)
+function getMaxVisibleLevel(viewerLevel: number): number {
+  return viewerLevel;
 }
 
 export async function registerRoutes(
@@ -40,12 +62,19 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
-      // Get additional stats
+      // Get additional stats - only count visible invitees
       const invitees = await storage.getInvitees(userId);
+      const visibleInvitees = invitees.filter(inv => inv.level <= user.level);
+      
+      // Sanitize inviter if they are above current user's level (hide their existence)
+      const sanitizedInviter = user.inviter && user.inviter.level <= user.level 
+        ? sanitizeUser(user.inviter, user.level)
+        : undefined;
       
       res.json({
         ...user,
-        inviteCount: invitees.length,
+        inviter: sanitizedInviter,
+        inviteCount: visibleInvitees.length,
       });
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -246,7 +275,7 @@ export async function registerRoutes(
         ...sanitizedUser,
         inviter: sanitizedInviter,
         invitees: sanitizedInvitees,
-        inviteCount: invitees.length,
+        inviteCount: sanitizedInvitees.length,
       });
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -259,6 +288,15 @@ export async function registerRoutes(
       const requestingUser = await storage.getUser(req.user.claims.sub);
       if (!requestingUser) {
         return res.status(401).json({ message: "User not found" });
+      }
+      
+      // Check if viewer can access the target user's invitees
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      if (targetUser.level > requestingUser.level) {
+        return res.status(403).json({ message: "Not authorized" });
       }
       
       const invitees = await storage.getInvitees(req.params.id);
@@ -304,9 +342,19 @@ export async function registerRoutes(
     }
   });
 
-  // Level 5 governance info endpoint
+  // Level 5 governance info endpoint - only visible to Level 5
   app.get("/api/level5-governance", isAuthenticated, async (req: any, res) => {
     try {
+      const requestingUser = await storage.getUser(req.user.claims.sub);
+      if (!requestingUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
+      // Non-Level 5 users should not know about Level 5 governance
+      if (requestingUser.level < 5) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
       const level5Count = await storage.countLevel5Users();
       const voteThreshold = await storage.getLevel5VoteThreshold();
       const canBootstrap = await storage.canBootstrapPromoteToLevel5();
@@ -400,30 +448,93 @@ export async function registerRoutes(
 
   // === Promotion request endpoints ===
   
-  app.get("/api/promotions", isAuthenticated, async (req, res) => {
+  app.get("/api/promotions", isAuthenticated, async (req: any, res) => {
     try {
+      const requestingUser = await storage.getUser(req.user.claims.sub);
+      if (!requestingUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
       const status = req.query.status as "open" | "approved" | "rejected" | "expired" | undefined;
       const requests = await storage.getPromotionRequests(status);
       
-      // Get details for each request
-      const requestsWithDetails = await Promise.all(
-        requests.map(async (r) => storage.getPromotionRequestWithDetails(r.id))
+      // Filter promotions to only show those where both current and proposed levels
+      // are within the viewer's visible range
+      const visibleRequests = requests.filter(r => 
+        r.currentLevel <= requestingUser.level && r.proposedLevel <= requestingUser.level
       );
       
-      res.json(requestsWithDetails);
+      // Get details for each visible request
+      const requestsWithDetails = await Promise.all(
+        visibleRequests.map(async (r) => {
+          const details = await storage.getPromotionRequestWithDetails(r.id);
+          if (!details) return null;
+          
+          // Sanitize user data in the response (handle potential undefined users)
+          // Filter out votes from higher-level users to prevent leaking their existence
+          const visibleVotes = (details.votes || []).filter(v => 
+            v.voter && v.voter.level <= requestingUser.level
+          ).map(v => ({
+            ...v,
+            voter: sanitizeUser(v.voter!, requestingUser.level),
+          }));
+          
+          return {
+            ...details,
+            candidate: details.candidate ? sanitizeUser(details.candidate, requestingUser.level) : null,
+            proposer: details.proposer ? sanitizeUser(details.proposer, requestingUser.level) : null,
+            votes: visibleVotes,
+            votesFor: visibleVotes.filter(v => v.vote === "for").length,
+            votesAgainst: visibleVotes.filter(v => v.vote === "against").length,
+          };
+        })
+      );
+      
+      // Filter out any requests where candidate or proposer couldn't be resolved
+      const validRequests = requestsWithDetails.filter(r => 
+        r !== null && r.candidate !== null && r.proposer !== null
+      );
+      res.json(validRequests);
     } catch (error) {
       console.error("Error fetching promotions:", error);
       res.status(500).json({ message: "Failed to fetch promotions" });
     }
   });
 
-  app.get("/api/promotions/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/promotions/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const requestingUser = await storage.getUser(req.user.claims.sub);
+      if (!requestingUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
       const request = await storage.getPromotionRequestWithDetails(req.params.id);
       if (!request) {
         return res.status(404).json({ message: "Promotion request not found" });
       }
-      res.json(request);
+      
+      // Check if viewer can see this promotion (both levels must be visible)
+      if (request.currentLevel > requestingUser.level || request.proposedLevel > requestingUser.level) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      // Sanitize user data (handle potential undefined users)
+      // Filter out votes from higher-level users to prevent leaking their existence
+      const visibleVotes = (request.votes || []).filter(v => 
+        v.voter && v.voter.level <= requestingUser.level
+      ).map(v => ({
+        ...v,
+        voter: sanitizeUser(v.voter!, requestingUser.level),
+      }));
+      
+      res.json({
+        ...request,
+        candidate: request.candidate ? sanitizeUser(request.candidate, requestingUser.level) : null,
+        proposer: request.proposer ? sanitizeUser(request.proposer, requestingUser.level) : null,
+        votes: visibleVotes,
+        votesFor: visibleVotes.filter(v => v.vote === "for").length,
+        votesAgainst: visibleVotes.filter(v => v.vote === "against").length,
+      });
     } catch (error) {
       console.error("Error fetching promotion:", error);
       res.status(500).json({ message: "Failed to fetch promotion" });
@@ -544,21 +655,40 @@ export async function registerRoutes(
   app.get("/api/stats", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
       const allUsers = await storage.getUsersByLevel();
       const myInvites = await storage.getInvitees(userId);
       const openPromotions = await storage.getPromotionRequests("open");
       
-      // Count users by level
-      const levelCounts = [1, 2, 3, 4, 5].map(level => ({
-        level,
-        count: allUsers.filter(u => u.level === level).length,
-      }));
+      // Only show users at or below viewer's level
+      const visibleUsers = allUsers.filter(u => u.level <= user.level);
+      
+      // Only count visible invitees to prevent leaking info about higher-level users
+      const visibleInvites = myInvites.filter(u => u.level <= user.level);
+      
+      // Count users by level - only show levels <= viewer level
+      const levelCounts = [];
+      for (let level = 1; level <= user.level; level++) {
+        levelCounts.push({
+          level,
+          count: visibleUsers.filter(u => u.level === level).length,
+        });
+      }
+      
+      // Filter promotions - only show those where candidate is at viewer's visible level or below
+      // and proposed level is also within viewer's visible range
+      const visiblePromotions = openPromotions.filter(promo => 
+        promo.currentLevel <= user.level && promo.proposedLevel <= user.level
+      );
       
       // Count promotions needing my vote
-      const user = await storage.getUser(userId);
       let pendingMyVote = 0;
-      if (user && user.level >= 4) {
-        for (const promo of openPromotions) {
+      if (user.level >= 4) {
+        for (const promo of visiblePromotions) {
           const hasVoted = await storage.hasUserVoted(promo.id, userId);
           if (!hasVoted && promo.allowedVoterMinLevel <= user.level) {
             pendingMyVote++;
@@ -567,11 +697,12 @@ export async function registerRoutes(
       }
       
       res.json({
-        totalMembers: allUsers.length,
-        myInviteCount: myInvites.length,
-        pendingPromotions: openPromotions.length,
+        totalMembers: visibleUsers.length,
+        myInviteCount: visibleInvites.length,
+        pendingPromotions: visiblePromotions.length,
         pendingMyVote,
         levelDistribution: levelCounts,
+        maxVisibleLevel: user.level,
       });
     } catch (error) {
       console.error("Error fetching stats:", error);

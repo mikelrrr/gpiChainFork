@@ -17,6 +17,7 @@ interface Stats {
   pendingPromotions: number;
   pendingMyVote: number;
   levelDistribution: { level: number; count: number }[];
+  maxVisibleLevel: number;
 }
 
 interface DashboardViewProps {
@@ -54,6 +55,7 @@ export default function DashboardView({ onNavigate }: DashboardViewProps) {
 
   const levelDistribution = stats?.levelDistribution || [];
   const totalMembers = stats?.totalMembers || 0;
+  const maxVisibleLevel = stats?.maxVisibleLevel || 5;
 
   return (
     <div className="space-y-6">
@@ -145,6 +147,7 @@ export default function DashboardView({ onNavigate }: DashboardViewProps) {
         <LevelFilter
           selectedLevels={selectedLevels}
           onToggleLevel={handleToggleLevel}
+          maxVisibleLevel={maxVisibleLevel}
         />
 
         {usersLoading ? (
