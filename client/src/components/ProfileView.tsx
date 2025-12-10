@@ -241,7 +241,7 @@ export default function ProfileView() {
                         <SelectValue placeholder="Select level" />
                       </SelectTrigger>
                       <SelectContent>
-                        {[2, 3, 4].filter(l => {
+                        {[2, 3, 4, 5].filter(l => {
                           const candidate = allUsers.find(u => u.id === selectedMember);
                           return candidate && l > candidate.level && l <= user.level;
                         }).map(level => (
