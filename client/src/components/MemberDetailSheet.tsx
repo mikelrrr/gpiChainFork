@@ -158,7 +158,7 @@ export default function MemberDetailSheet({ memberId, onClose }: MemberDetailShe
   };
 
   const isOpen = !!memberId;
-  const displayName = member ? `${member.firstName || ""} ${member.lastName || ""}`.trim() || "Unknown" : "";
+  const displayName = member ? (member.username || `${member.firstName || ""} ${member.lastName || ""}`.trim() || "Unknown") : "";
   
   // Standard promotion (Level 4+, for promotions up to Level 4)
   const canPropose = currentUser && 
@@ -254,14 +254,14 @@ export default function MemberDetailSheet({ memberId, onClose }: MemberDetailShe
                   </div>
                   <div className="flex items-center gap-3">
                     <UserAvatar
-                      name={`${member.inviter.firstName || ""} ${member.inviter.lastName || ""}`.trim() || "Unknown"}
+                      name={member.inviter.username || `${member.inviter.firstName || ""} ${member.inviter.lastName || ""}`.trim() || "Unknown"}
                       imageUrl={member.inviter.profileImageUrl || undefined}
                       level={member.inviter.level as 1 | 2 | 3 | 4 | 5}
                       size="sm"
                     />
                     <div>
                       <p className="font-medium text-sm">
-                        {`${member.inviter.firstName || ""} ${member.inviter.lastName || ""}`.trim() || member.inviter.email}
+                        {member.inviter.username || `${member.inviter.firstName || ""} ${member.inviter.lastName || ""}`.trim() || member.inviter.email}
                       </p>
                       <LevelBadge level={member.inviter.level as 1 | 2 | 3 | 4 | 5} size="sm" />
                     </div>
@@ -281,13 +281,13 @@ export default function MemberDetailSheet({ memberId, onClose }: MemberDetailShe
                     {member.invitees.slice(0, 5).map((invitee) => (
                       <div key={invitee.id} className="flex items-center gap-2">
                         <UserAvatar
-                          name={`${invitee.firstName || ""} ${invitee.lastName || ""}`.trim() || "Unknown"}
+                          name={invitee.username || `${invitee.firstName || ""} ${invitee.lastName || ""}`.trim() || "Unknown"}
                           imageUrl={invitee.profileImageUrl || undefined}
                           level={invitee.level as 1 | 2 | 3 | 4 | 5}
                           size="sm"
                         />
                         <span className="text-sm">
-                          {`${invitee.firstName || ""} ${invitee.lastName || ""}`.trim() || invitee.email}
+                          {invitee.username || `${invitee.firstName || ""} ${invitee.lastName || ""}`.trim() || invitee.email}
                         </span>
                         <LevelBadge level={invitee.level as 1 | 2 | 3 | 4 | 5} size="sm" />
                       </div>

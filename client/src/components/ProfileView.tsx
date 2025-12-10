@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import UserAvatar from "./UserAvatar";
@@ -12,7 +13,7 @@ import LevelBadge from "./LevelBadge";
 import StatusDot from "./StatusDot";
 import GPIChainNode from "./GPIChainNode";
 import ThemeToggle from "./ThemeToggle";
-import { Calendar, Users, ArrowUpCircle, Shield, LogOut, Settings } from "lucide-react";
+import { Calendar, Users, ArrowUpCircle, Shield, LogOut, Settings, Pencil, Check, X, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -28,12 +29,12 @@ interface UserWithInvitees extends User {
 function buildGPITree(user: UserWithInvitees): any {
   return {
     id: user.id,
-    name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown",
+    name: user.username || `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown",
     level: user.level as 1 | 2 | 3 | 4 | 5,
     imageUrl: user.profileImageUrl || undefined,
     invitees: user.invitees?.map(inv => ({
       id: inv.id,
-      name: `${inv.firstName || ""} ${inv.lastName || ""}`.trim() || "Unknown",
+      name: inv.username || `${inv.firstName || ""} ${inv.lastName || ""}`.trim() || "Unknown",
       level: inv.level as 1 | 2 | 3 | 4 | 5,
       imageUrl: inv.profileImageUrl || undefined,
     })) || [],
@@ -42,11 +43,21 @@ function buildGPITree(user: UserWithInvitees): any {
 
 export default function ProfileView() {
   const [isPromoteDialogOpen, setIsPromoteDialogOpen] = useState(false);
+  const [isEditUsernameOpen, setIsEditUsernameOpen] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [debouncedUsername, setDebouncedUsername] = useState("");
   const [selectedMember, setSelectedMember] = useState<string>("");
   const [selectedLevel, setSelectedLevel] = useState<string>("");
   const [justification, setJustification] = useState("");
   const { toast } = useToast();
   const { user: authUser, isLoading: authLoading } = useAuth();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedUsername(newUsername.toLowerCase().trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [newUsername]);
 
   const { data: profileData, isLoading: profileLoading } = useQuery<UserWithInvitees>({
     queryKey: ["/api/users", authUser?.id],
@@ -56,6 +67,32 @@ export default function ProfileView() {
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
     enabled: !!authUser && authUser.level >= 4,
+  });
+
+  const { data: usernameAvailability, isLoading: checkingUsername } = useQuery<{ available: boolean; reason: string | null }>({
+    queryKey: ["/api/username/check", debouncedUsername],
+    enabled: isEditUsernameOpen && debouncedUsername.length >= 3 && debouncedUsername !== authUser?.username,
+  });
+
+  const updateUsernameMutation = useMutation({
+    mutationFn: async ({ userId, username }: { userId: string; username: string }) => {
+      const response = await apiRequest("PATCH", `/api/users/${userId}/username`, { username });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Username Updated", description: "Your username has been updated successfully." });
+      setIsEditUsernameOpen(false);
+      setNewUsername("");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Update Username",
+        description: error.message || "An error occurred",
+        variant: "destructive",
+      });
+    },
   });
 
   const createPromotionMutation = useMutation({
@@ -124,7 +161,7 @@ export default function ProfileView() {
     );
   }
 
-  const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown";
+  const displayName = user.username || `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown";
   const gpiTree = profileData ? buildGPITree(profileData) : null;
 
   // Members eligible for promotion (lower level than proposer)
@@ -151,7 +188,20 @@ export default function ProfileView() {
               level={user.level as 1 | 2 | 3 | 4 | 5} 
               size="lg" 
             />
-            <h2 className="text-xl font-bold mt-4">{displayName}</h2>
+            <div className="flex items-center gap-2 mt-4">
+              <h2 className="text-xl font-bold">{displayName}</h2>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => {
+                  setNewUsername(user.username || "");
+                  setIsEditUsernameOpen(true);
+                }}
+                data-testid="button-edit-username"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </div>
             <p className="text-sm text-muted-foreground">{user.email}</p>
             <div className="flex items-center gap-2 mt-2">
               <LevelBadge level={user.level as 1 | 2 | 3 | 4 | 5} />
@@ -183,13 +233,13 @@ export default function ProfileView() {
               <p className="text-xs text-muted-foreground mb-2">Invited by</p>
               <div className="flex items-center gap-2">
                 <UserAvatar 
-                  name={`${profileData.inviter.firstName || ""} ${profileData.inviter.lastName || ""}`.trim() || "Unknown"}
+                  name={profileData.inviter.username || `${profileData.inviter.firstName || ""} ${profileData.inviter.lastName || ""}`.trim() || "Unknown"}
                   imageUrl={profileData.inviter.profileImageUrl || undefined}
                   level={profileData.inviter.level as 1 | 2 | 3 | 4 | 5} 
                   size="sm" 
                 />
                 <span className="font-medium text-sm">
-                  {`${profileData.inviter.firstName || ""} ${profileData.inviter.lastName || ""}`.trim() || profileData.inviter.email}
+                  {profileData.inviter.username || `${profileData.inviter.firstName || ""} ${profileData.inviter.lastName || ""}`.trim() || profileData.inviter.email}
                 </span>
                 <LevelBadge level={profileData.inviter.level as 1 | 2 | 3 | 4 | 5} size="sm" />
               </div>
@@ -197,6 +247,74 @@ export default function ProfileView() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isEditUsernameOpen} onOpenChange={setIsEditUsernameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Username</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-username">New Username</Label>
+              <div className="relative">
+                <Input
+                  id="new-username"
+                  type="text"
+                  placeholder="your_username"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 30))}
+                  className="pr-10"
+                  data-testid="input-new-username"
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  {checkingUsername && debouncedUsername.length >= 3 && (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                  {!checkingUsername && usernameAvailability?.available && debouncedUsername !== user.username && (
+                    <Check className="h-4 w-4 text-green-500" />
+                  )}
+                  {!checkingUsername && usernameAvailability && !usernameAvailability.available && (
+                    <X className="h-4 w-4 text-destructive" />
+                  )}
+                </div>
+              </div>
+              {debouncedUsername.length > 0 && debouncedUsername.length < 3 && (
+                <p className="text-xs text-muted-foreground">Username must be at least 3 characters</p>
+              )}
+              {usernameAvailability?.reason && (
+                <p className="text-xs text-destructive">{usernameAvailability.reason}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                3-30 characters, letters, numbers, and underscores only
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditUsernameOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => user && updateUsernameMutation.mutate({ userId: user.id, username: newUsername })}
+              disabled={
+                !newUsername || 
+                newUsername.length < 3 || 
+                (debouncedUsername !== user?.username && !usernameAvailability?.available) ||
+                updateUsernameMutation.isPending
+              }
+              data-testid="button-save-username"
+            >
+              {updateUsernameMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Username"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {user.level >= 4 && (
         <Card>
@@ -228,7 +346,7 @@ export default function ProfileView() {
                       <SelectContent>
                         {eligibleMembers.map(member => (
                           <SelectItem key={member.id} value={member.id}>
-                            {`${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email} (Level {member.level})
+                            {member.username || `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email} (Level {member.level})
                           </SelectItem>
                         ))}
                       </SelectContent>

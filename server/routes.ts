@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, requireLevel } from "./replitAuth";
+import { setupAuth, isAuthenticated, requireLevel, completeRegistration } from "./replitAuth";
 import { insertPromotionRequestSchema, insertVoteSchema, type User } from "@shared/schema";
 import { z } from "zod";
 
@@ -75,11 +75,123 @@ export async function registerRoutes(
       const inviter = await storage.getUser(link.invitedByUserId);
       res.json({
         valid: true,
-        inviterName: inviter ? `${inviter.firstName || ""} ${inviter.lastName || ""}`.trim() || inviter.email : "Unknown",
+        inviterName: inviter ? inviter.username : "Unknown",
       });
     } catch (error) {
       console.error("Error validating invite:", error);
       res.status(500).json({ message: "Failed to validate invite" });
+    }
+  });
+
+  // Check pending registration status (requires session but not full auth since user may not be created yet)
+  app.get("/api/auth/pending-registration", (req: any, res) => {
+    // Only return pending info if there is an authenticated session
+    if (!req.session) {
+      return res.status(401).json({ message: "No session" });
+    }
+    
+    const pending = req.session?.pendingRegistration;
+    if (!pending) {
+      return res.json({ pending: false });
+    }
+    res.json({
+      pending: true,
+      isFirstUser: pending.isFirstUser,
+      firstName: pending.claims?.first_name,
+      lastName: pending.claims?.last_name,
+    });
+  });
+
+  // Complete registration with username
+  app.post("/api/auth/complete-registration", async (req: any, res) => {
+    try {
+      const pending = req.session?.pendingRegistration;
+      if (!pending) {
+        return res.status(400).json({ message: "No pending registration" });
+      }
+
+      const { username } = req.body;
+      if (!username || typeof username !== "string") {
+        return res.status(400).json({ message: "Username is required" });
+      }
+
+      const result = await completeRegistration(pending, username);
+      if (result.error) {
+        return res.status(400).json({ message: result.error });
+      }
+
+      // Clear pending registration
+      delete req.session.pendingRegistration;
+
+      res.json({ success: true, user: result.user });
+    } catch (error) {
+      console.error("Error completing registration:", error);
+      res.status(500).json({ message: "Failed to complete registration" });
+    }
+  });
+
+  // Check username availability
+  app.get("/api/username/check/:username", async (req, res) => {
+    try {
+      const username = req.params.username.toLowerCase().trim();
+      
+      // Validate format
+      if (username.length < 3 || username.length > 30) {
+        return res.json({ available: false, reason: "Username must be 3-30 characters" });
+      }
+      if (!/^[a-z0-9_]+$/.test(username)) {
+        return res.json({ available: false, reason: "Username can only contain letters, numbers, and underscores" });
+      }
+      
+      const available = await storage.isUsernameAvailable(username);
+      res.json({ available, reason: available ? null : "Username is already taken" });
+    } catch (error) {
+      console.error("Error checking username:", error);
+      res.status(500).json({ message: "Failed to check username" });
+    }
+  });
+
+  // Update username (self or Level 5 can edit others)
+  app.patch("/api/users/:userId/username", isAuthenticated, async (req: any, res) => {
+    try {
+      const targetUserId = req.params.userId;
+      const currentUserId = req.user.claims.sub;
+      const { username } = req.body;
+
+      // Get current user
+      const currentUser = await storage.getUser(currentUserId);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Check permissions: self-edit or Level 5
+      const isSelf = targetUserId === currentUserId;
+      const isLevel5 = currentUser.level === 5;
+      
+      if (!isSelf && !isLevel5) {
+        return res.status(403).json({ message: "Only Level 5 members can edit other users' usernames" });
+      }
+
+      // Validate username
+      const normalizedUsername = username.toLowerCase().trim();
+      if (normalizedUsername.length < 3 || normalizedUsername.length > 30) {
+        return res.status(400).json({ message: "Username must be 3-30 characters" });
+      }
+      if (!/^[a-z0-9_]+$/.test(normalizedUsername)) {
+        return res.status(400).json({ message: "Username can only contain letters, numbers, and underscores" });
+      }
+
+      // Check availability (excluding target user's current username)
+      const available = await storage.isUsernameAvailable(normalizedUsername, targetUserId);
+      if (!available) {
+        return res.status(400).json({ message: "Username is already taken" });
+      }
+
+      const updatedUser = await storage.updateUsername(targetUserId, normalizedUsername);
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating username:", error);
+      res.status(500).json({ message: "Failed to update username" });
     }
   });
 

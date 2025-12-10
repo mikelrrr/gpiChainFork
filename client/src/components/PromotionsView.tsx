@@ -90,11 +90,11 @@ export default function PromotionsView() {
               <PromotionCard
                 key={promotion.id}
                 id={promotion.id}
-                candidateName={`${promotion.candidate.firstName || ""} ${promotion.candidate.lastName || ""}`.trim() || "Unknown"}
+                candidateName={promotion.candidate.username || `${promotion.candidate.firstName || ""} ${promotion.candidate.lastName || ""}`.trim() || "Unknown"}
                 candidateImage={promotion.candidate.profileImageUrl || undefined}
                 currentLevel={promotion.currentLevel as 1 | 2 | 3 | 4 | 5}
                 proposedLevel={promotion.proposedLevel as 1 | 2 | 3 | 4 | 5}
-                createdByName={`${promotion.createdBy.firstName || ""} ${promotion.createdBy.lastName || ""}`.trim() || "Unknown"}
+                createdByName={promotion.createdBy.username || `${promotion.createdBy.firstName || ""} ${promotion.createdBy.lastName || ""}`.trim() || "Unknown"}
                 justification={promotion.justification}
                 createdAt={new Date(promotion.createdAt || Date.now())}
                 votesFor={promotion.votesFor}
@@ -123,11 +123,11 @@ export default function PromotionsView() {
               <PromotionCard
                 key={promotion.id}
                 id={promotion.id}
-                candidateName={`${promotion.candidate.firstName || ""} ${promotion.candidate.lastName || ""}`.trim() || "Unknown"}
+                candidateName={promotion.candidate.username || `${promotion.candidate.firstName || ""} ${promotion.candidate.lastName || ""}`.trim() || "Unknown"}
                 candidateImage={promotion.candidate.profileImageUrl || undefined}
                 currentLevel={promotion.currentLevel as 1 | 2 | 3 | 4 | 5}
                 proposedLevel={promotion.proposedLevel as 1 | 2 | 3 | 4 | 5}
-                createdByName={`${promotion.createdBy.firstName || ""} ${promotion.createdBy.lastName || ""}`.trim() || "Unknown"}
+                createdByName={promotion.createdBy.username || `${promotion.createdBy.firstName || ""} ${promotion.createdBy.lastName || ""}`.trim() || "Unknown"}
                 justification={promotion.justification}
                 createdAt={new Date(promotion.createdAt || Date.now())}
                 votesFor={promotion.votesFor}

@@ -51,7 +51,14 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
-async function upsertUser(claims: any, inviteToken?: string): Promise<{ user: any, error?: string }> {
+interface PendingRegistration {
+  claims: any;
+  inviteToken?: string;
+  invitedByUserId?: string;
+  isFirstUser: boolean;
+}
+
+async function checkUserRegistration(claims: any, inviteToken?: string): Promise<{ user: any, pending?: PendingRegistration, error?: string }> {
   // Check if this is the first user (becomes Level 5 admin)
   const userCount = await storage.getUserCount();
   const isFirstUser = userCount === 0;
@@ -63,6 +70,7 @@ async function upsertUser(claims: any, inviteToken?: string): Promise<{ user: an
     // Just update profile info for existing user
     const user = await storage.upsertUser({
       id: claims["sub"],
+      username: existingUser.username,
       email: claims["email"],
       firstName: claims["first_name"],
       lastName: claims["last_name"],
@@ -92,23 +100,54 @@ async function upsertUser(claims: any, inviteToken?: string): Promise<{ user: an
     invitedByUserId = inviteLink.invitedByUserId;
   }
 
-  // Create new user
+  // Return pending registration - user needs to choose username
+  return {
+    user: null,
+    pending: {
+      claims,
+      inviteToken,
+      invitedByUserId,
+      isFirstUser,
+    }
+  };
+}
+
+export async function completeRegistration(pendingReg: PendingRegistration, username: string): Promise<{ user: any, error?: string }> {
+  const claims = pendingReg.claims;
+  
+  // Validate username
+  const normalizedUsername = username.toLowerCase().trim();
+  if (normalizedUsername.length < 3 || normalizedUsername.length > 30) {
+    return { user: null, error: "Username must be 3-30 characters" };
+  }
+  if (!/^[a-z0-9_]+$/.test(normalizedUsername)) {
+    return { user: null, error: "Username can only contain letters, numbers, and underscores" };
+  }
+  
+  // Check username availability
+  const isAvailable = await storage.isUsernameAvailable(normalizedUsername);
+  if (!isAvailable) {
+    return { user: null, error: "Username is already taken" };
+  }
+
+  // Create new user with username
   const user = await storage.upsertUser({
     id: claims["sub"],
+    username: normalizedUsername,
     email: claims["email"],
     firstName: claims["first_name"],
     lastName: claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
-    level: isFirstUser ? 5 : 1, // First user is Level 5
-    invitedByUserId: invitedByUserId,
+    level: pendingReg.isFirstUser ? 5 : 1,
+    invitedByUserId: pendingReg.invitedByUserId,
     agreementAcceptedAt: new Date(),
     agreementVersion: 1,
   });
 
   // Mark invite link as used if applicable
-  if (inviteToken && invitedByUserId) {
+  if (pendingReg.inviteToken && pendingReg.invitedByUserId) {
     try {
-      await storage.useInviteLink(inviteToken, user.id);
+      await storage.useInviteLink(pendingReg.inviteToken, user.id);
     } catch (e) {
       console.error("Failed to mark invite as used:", e);
     }
@@ -181,12 +220,22 @@ export async function setupAuth(app: Express) {
       const inviteToken = (req.session as any).inviteToken;
       delete (req.session as any).inviteToken;
 
-      // Upsert user with invite token
-      const result = await upsertUser(user.claims, inviteToken);
+      // Check registration status
+      const result = await checkUserRegistration(user.claims, inviteToken);
       
       if (result.error) {
         // Registration failed - redirect with error
         return res.redirect(`/?error=${encodeURIComponent(result.error)}`);
+      }
+
+      if (result.pending) {
+        // New user needs to choose username - store pending registration in session
+        (req.session as any).pendingRegistration = result.pending;
+        req.logIn(user, (err) => {
+          if (err) return next(err);
+          res.redirect("/?register=pending");
+        });
+        return;
       }
 
       req.logIn(user, (err) => {

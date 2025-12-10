@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,6 +11,7 @@ import PromotionsView from "@/components/PromotionsView";
 import ProfileView from "@/components/ProfileView";
 import LoginView from "@/components/LoginView";
 import FirstAdminSetup from "@/components/FirstAdminSetup";
+import UsernameRegistration from "@/components/UsernameRegistration";
 import { useAuth, useSetupRequired } from "@/hooks/useAuth";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -31,12 +32,19 @@ function MainApp() {
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const { setupRequired, isLoading: setupLoading } = useSetupRequired();
 
-  // Check for invite token and error in URL
+  // Check for invite token, error, and registration pending in URL
   const urlParams = new URLSearchParams(window.location.search);
   const inviteToken = urlParams.get("invite");
   const errorParam = urlParams.get("error");
+  const registerParam = urlParams.get("register");
   const [inviterName, setInviterName] = useState<string | undefined>();
   const [authError, setAuthError] = useState<string | undefined>(errorParam || undefined);
+
+  // Check for pending registration
+  const { data: pendingRegData, isLoading: pendingLoading } = useQuery<{ pending: boolean }>({
+    queryKey: ["/api/auth/pending-registration"],
+    enabled: registerParam === "pending" || isAuthenticated,
+  });
 
   useEffect(() => {
     if (inviteToken) {
@@ -58,12 +66,19 @@ function MainApp() {
     }
   }, [errorParam]);
 
-  const isLoading = authLoading || setupLoading;
+  const isLoading = authLoading || setupLoading || pendingLoading;
 
   const handleLogin = () => {
     // Redirect to login with invite token if present
     const loginUrl = inviteToken ? `/api/login?invite=${inviteToken}` : "/api/login";
     window.location.href = loginUrl;
+  };
+
+  const handleRegistrationComplete = () => {
+    // Clear the register param from URL and refresh
+    window.history.replaceState({}, document.title, window.location.pathname);
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/pending-registration"] });
   };
 
   if (isLoading) {
@@ -76,7 +91,7 @@ function MainApp() {
   }
 
   // Login page (regular or invite)
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !pendingRegData?.pending) {
     return (
       <LoginView 
         onLogin={handleLogin} 
@@ -85,6 +100,11 @@ function MainApp() {
         error={authError}
       />
     );
+  }
+
+  // Pending registration - need to choose username
+  if (pendingRegData?.pending) {
+    return <UsernameRegistration onComplete={handleRegistrationComplete} />;
   }
 
   // Clear invite token from URL after successful login

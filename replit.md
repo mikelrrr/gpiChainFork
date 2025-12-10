@@ -32,11 +32,23 @@ Preferred communication style: Simple, everyday language.
 - **Migrations**: Managed via drizzle-kit with `db:push` command
 
 ### Core Domain Models
-- **Users**: Members with levels 1-5, status tracking, invitation relationships
+- **Users**: Members with levels 1-5, status tracking, invitation relationships, unique usernames
 - **Invite Links**: Tokenized invitation system with usage tracking
 - **Promotion Requests**: Workflow for level advancement proposals
 - **Votes**: Voting system for promotion approvals
 - **User Level History**: Audit trail for level changes
+
+### Username System
+- **Username Field**: Unique, required field (3-30 characters, lowercase letters, numbers, underscores)
+- **Registration**: New users must choose a username during registration (stored in session as pending registration)
+- **Display**: Usernames are the primary display name, with firstName/lastName as fallback
+- **Editing**: Users can edit their own username; Level 5 users can edit any username
+- **Validation**: Real-time availability checking with debounced API calls
+- **API Endpoints**:
+  - `GET /api/username/check/:username`: Check username availability
+  - `PATCH /api/users/:userId/username`: Update username (self or Level 5)
+  - `GET /api/auth/pending-registration`: Check if user has pending registration
+  - `POST /api/auth/complete-registration`: Complete registration with chosen username
 
 ### Visibility Rules (enforced at API and UI levels)
 - **Level-based visibility**: Users can only see members whose level is ≤ their own level

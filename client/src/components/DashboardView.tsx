@@ -43,9 +43,10 @@ export default function DashboardView({ onNavigate }: DashboardViewProps) {
   };
 
   const filteredUsers = users.filter(user => {
-    const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "";
+    const displayName = user.username || `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "";
     const matchesSearch = search === "" || 
       displayName.toLowerCase().includes(search.toLowerCase()) ||
+      user.username?.toLowerCase().includes(search.toLowerCase()) ||
       (user.email?.toLowerCase().includes(search.toLowerCase()) ?? false);
     const matchesLevel = selectedLevels.length === 0 || selectedLevels.includes(user.level);
     return matchesSearch && matchesLevel;
@@ -156,7 +157,7 @@ export default function DashboardView({ onNavigate }: DashboardViewProps) {
               <UserCard
                 key={user.id}
                 id={user.id}
-                name={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown"}
+                name={user.username || `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Unknown"}
                 email={user.email || undefined}
                 level={user.level as 1 | 2 | 3 | 4 | 5}
                 status={user.status as "active" | "suspended" | "expelled"}
