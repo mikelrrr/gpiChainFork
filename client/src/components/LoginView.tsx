@@ -1,15 +1,16 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SiGoogle } from "react-icons/si";
-import { Users, Shield, Link2 } from "lucide-react";
+import { Users, Shield, Link2, AlertCircle } from "lucide-react";
 
 interface LoginViewProps {
   onLogin: () => void;
   inviteToken?: string;
   inviterName?: string;
+  error?: string;
 }
 
-export default function LoginView({ onLogin, inviteToken, inviterName }: LoginViewProps) {
+export default function LoginView({ onLogin, inviteToken, inviterName, error }: LoginViewProps) {
   const isInviteFlow = !!inviteToken;
 
   return (
@@ -27,6 +28,18 @@ export default function LoginView({ onLogin, inviteToken, inviterName }: LoginVi
             }
           </p>
         </div>
+
+        {error && (
+          <Card className="border-destructive/50 bg-destructive/10">
+            <CardContent className="p-4 flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-destructive">Sign In Failed</p>
+                <p className="text-xs text-muted-foreground mt-1">{error}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {inviterName && (
           <Card className="border-primary/20 bg-primary/5">

@@ -31,10 +31,12 @@ function MainApp() {
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const { setupRequired, isLoading: setupLoading } = useSetupRequired();
 
-  // Check for invite token in URL
+  // Check for invite token and error in URL
   const urlParams = new URLSearchParams(window.location.search);
   const inviteToken = urlParams.get("invite");
+  const errorParam = urlParams.get("error");
   const [inviterName, setInviterName] = useState<string | undefined>();
+  const [authError, setAuthError] = useState<string | undefined>(errorParam || undefined);
 
   useEffect(() => {
     if (inviteToken) {
@@ -48,6 +50,13 @@ function MainApp() {
         .catch(() => {});
     }
   }, [inviteToken]);
+
+  // Clear error from URL but keep in state
+  useEffect(() => {
+    if (errorParam) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [errorParam]);
 
   const isLoading = authLoading || setupLoading;
 
@@ -73,6 +82,7 @@ function MainApp() {
         onLogin={handleLogin} 
         inviteToken={inviteToken || undefined}
         inviterName={inviterName}
+        error={authError}
       />
     );
   }
