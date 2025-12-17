@@ -406,6 +406,10 @@ export async function setupAuth(app: Express) {
       const inviteToken = (req.session as any).inviteToken;
       delete (req.session as any).inviteToken;
 
+      if (!user.email) {
+        return res.status(400).json({ message: 'User email is missing' });
+      }
+
       const result = await checkUserRegistration(user.email, inviteToken);
       
       if (result.error) {
