@@ -122,15 +122,15 @@ export async function completeRegistration(pendingReg: PendingRegistration, user
     userId = supabaseUserId;
   } else {
     // Otherwise, create new user in Supabase Auth (email/password)
-  const userPassword = password || crypto.randomBytes(16).toString('hex');
-  
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email: pendingReg.email,
-    password: userPassword,
-  });
+    const userPassword = password || crypto.randomBytes(16).toString('hex');
+    
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: pendingReg.email,
+      password: userPassword,
+    });
 
-  if (authError || !authData.user) {
-    return { user: null, error: authError?.message || "Failed to create user" };
+    if (authError || !authData.user) {
+      return { user: null, error: authError?.message || "Failed to create user" };
     }
 
     userId = authData.user.id;
@@ -282,6 +282,7 @@ export async function setupAuth(app: Express) {
           req.session.save((saveErr) => {
             if (saveErr) {
               console.error('Error saving session:', saveErr);
+              return res.status(500).json({ error: 'Failed to save session' });
             }
             return res.json({ redirect: '/?register=pending' });
           });
@@ -364,6 +365,7 @@ export async function setupAuth(app: Express) {
           req.session.save((saveErr) => {
             if (saveErr) {
               console.error('Error saving session:', saveErr);
+              return res.redirect(`/?error=${encodeURIComponent('Failed to save session')}`);
             }
             return res.redirect('/?register=pending');
           });

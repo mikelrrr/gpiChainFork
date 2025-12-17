@@ -197,7 +197,7 @@ export async function registerRoutes(
           return res.json({ success: true, user: result.user });
         });
       } else {
-        res.json({ success: true, user: result.user });
+        res.status(500).json({ message: "Registration failed: user not created" });
       }
     } catch (error) {
       console.error("Error completing registration:", error);
