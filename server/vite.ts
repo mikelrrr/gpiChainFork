@@ -15,8 +15,9 @@ export async function setupVite(server: Server, app: Express) {
     allowedHosts: true as const,
   };
 
+  const config = await viteConfig();
   const vite = await createViteServer({
-    ...viteConfig,
+    ...config,
     configFile: false,
     customLogger: {
       ...viteLogger,
@@ -30,6 +31,22 @@ export async function setupVite(server: Server, app: Express) {
   });
 
   app.use(vite.middlewares);
+
+  // Serve callback.html directly if requested
+  app.get("/callback.html", async (req, res, next) => {
+    try {
+      const callbackPath = path.resolve(
+        import.meta.dirname,
+        "..",
+        "client",
+        "callback.html",
+      );
+      const content = await fs.promises.readFile(callbackPath, "utf-8");
+      res.status(200).set({ "Content-Type": "text/html" }).end(content);
+    } catch (e) {
+      next(e);
+    }
+  });
 
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
