@@ -302,7 +302,14 @@ export async function setupAuth(app: Express) {
         if (err) {
           return res.status(500).json({ error: 'Failed to create session' });
         }
-        return res.json({ redirect: '/' });
+        // Explicitly save session to ensure it persists
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error('Error saving session:', saveErr);
+            return res.status(500).json({ error: 'Failed to save session' });
+          }
+          return res.json({ redirect: '/' });
+        });
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Authentication failed' });
@@ -405,10 +412,6 @@ export async function setupAuth(app: Express) {
 
       const inviteToken = (req.session as any).inviteToken;
       delete (req.session as any).inviteToken;
-
-      if (!user.email) {
-        return res.status(400).json({ message: 'User email is missing' });
-      }
 
       const result = await checkUserRegistration(user.email, inviteToken);
       
