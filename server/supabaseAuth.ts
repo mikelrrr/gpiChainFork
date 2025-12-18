@@ -312,10 +312,13 @@ export async function setupAuth(app: Express) {
           id: sessionData.user.id, 
           email: userEmail,
           pendingRegistration: true 
-        }, async (err) => {
+        }, (err) => {
           if (err) {
             console.error('[CALLBACK-TOKEN] ERROR: req.logIn failed:', err);
-            return res.status(500).json({ error: 'Failed to create session' });
+            if (!res.headersSent) {
+              return res.status(500).json({ error: 'Failed to create session' });
+            }
+            return;
           }
           console.log('[CALLBACK-TOKEN] req.logIn successful, saving session...');
           // Explicitly save session to ensure it persists
@@ -325,10 +328,15 @@ export async function setupAuth(app: Express) {
             console.log('[CALLBACK-TOKEN] Session ID after save:', req.sessionID);
             if (saveErr) {
               console.error('[CALLBACK-TOKEN] ERROR: Session save failed:', saveErr);
-              return res.status(500).json({ error: 'Failed to save session' });
+              if (!res.headersSent) {
+                return res.status(500).json({ error: 'Failed to save session' });
+              }
+              return;
             }
             console.log('[CALLBACK-TOKEN] SUCCESS: Session saved, redirecting to /?register=pending');
-            return res.json({ redirect: '/?register=pending' });
+            if (!res.headersSent) {
+              return res.json({ redirect: '/?register=pending' });
+            }
           });
         });
         return;
@@ -354,7 +362,10 @@ export async function setupAuth(app: Express) {
       req.logIn({ ...dbUser, email: userEmail }, (err) => {
         if (err) {
           console.error('[CALLBACK-TOKEN] ERROR: req.logIn failed:', err);
-          return res.status(500).json({ error: 'Failed to create session' });
+          if (!res.headersSent) {
+            return res.status(500).json({ error: 'Failed to create session' });
+          }
+          return;
         }
         console.log('[CALLBACK-TOKEN] req.logIn successful, saving session...');
         // Explicitly save session to ensure it persists
@@ -364,16 +375,23 @@ export async function setupAuth(app: Express) {
           console.log('[CALLBACK-TOKEN] Session ID after save:', req.sessionID);
           if (saveErr) {
             console.error('[CALLBACK-TOKEN] ERROR: Session save failed:', saveErr);
-            return res.status(500).json({ error: 'Failed to save session' });
+            if (!res.headersSent) {
+              return res.status(500).json({ error: 'Failed to save session' });
+            }
+            return;
           }
           console.log('[CALLBACK-TOKEN] SUCCESS: Session saved, redirecting to /');
-          return res.json({ redirect: '/' });
+          if (!res.headersSent) {
+            return res.json({ redirect: '/' });
+          }
         });
       });
     } catch (err: any) {
       console.error('[CALLBACK-TOKEN] EXCEPTION:', err);
       console.error('[CALLBACK-TOKEN] Stack:', err.stack);
-      return res.status(500).json({ error: err.message || 'Authentication failed' });
+      if (!res.headersSent) {
+        return res.status(500).json({ error: err.message || 'Authentication failed' });
+      }
     }
   });
 

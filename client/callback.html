@@ -68,7 +68,31 @@
           console.log('[CALLBACK] Response statusText:', res.statusText);
           console.log('[CALLBACK] Response headers:', Object.fromEntries(res.headers.entries()));
           
-          const data = await res.json();
+          // Check if response has content before parsing JSON
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            console.error('[CALLBACK] ERROR: Response is not JSON, status:', res.status);
+            const text = await res.text();
+            console.error('[CALLBACK] Response body:', text);
+            window.location.href = `/?error=${encodeURIComponent('Invalid server response')}`;
+            return;
+          }
+          
+          let data;
+          try {
+            const text = await res.text();
+            if (!text || text.trim().length === 0) {
+              console.error('[CALLBACK] ERROR: Empty response from server');
+              window.location.href = `/?error=${encodeURIComponent('Empty response from server')}`;
+              return;
+            }
+            data = JSON.parse(text);
+          } catch (parseErr) {
+            console.error('[CALLBACK] ERROR: Failed to parse JSON:', parseErr);
+            window.location.href = `/?error=${encodeURIComponent('Invalid JSON response')}`;
+            return;
+          }
+          
           console.log('[CALLBACK] Response data:', data);
           
           if (data.error) {
