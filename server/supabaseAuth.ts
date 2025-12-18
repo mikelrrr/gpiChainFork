@@ -229,61 +229,105 @@ export async function setupAuth(app: Express) {
 
   // Handle token-based callback (from client-side callback page)
   app.post("/api/callback-token", async (req, res) => {
+    console.log('[CALLBACK-TOKEN] ===== Request received =====');
+    console.log('[CALLBACK-TOKEN] Body:', JSON.stringify({ ...req.body, access_token: req.body.access_token ? '[REDACTED]' : undefined }));
+    console.log('[CALLBACK-TOKEN] Headers:', {
+      'content-type': req.headers['content-type'],
+      'origin': req.headers.origin,
+      'referer': req.headers.referer,
+    });
+    console.log('[CALLBACK-TOKEN] Session ID:', req.sessionID);
+    console.log('[CALLBACK-TOKEN] Cookie settings:', {
+      secure: req.secure,
+      protocol: req.protocol,
+      host: req.get('host'),
+      hasCookie: !!req.headers.cookie,
+    });
+
     const { access_token } = req.body;
 
     if (!access_token) {
+      console.log('[CALLBACK-TOKEN] ERROR: No access token provided');
       return res.status(400).json({ error: 'No access token provided' });
     }
 
     try {
       // Set the session using the access token
+      console.log('[CALLBACK-TOKEN] Setting Supabase session...');
       const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
         access_token,
         refresh_token: req.body.refresh_token || '',
       });
 
+      console.log('[CALLBACK-TOKEN] Supabase session error:', sessionError);
+      console.log('[CALLBACK-TOKEN] Supabase user:', sessionData?.user ? {
+        id: sessionData.user.id,
+        email: sessionData.user.email,
+        hasEmail: !!sessionData.user.email,
+      } : 'null');
+
       if (sessionError || !sessionData.user) {
+        console.log('[CALLBACK-TOKEN] ERROR: Supabase session failed');
         return res.status(400).json({ error: sessionError?.message || 'Authentication failed' });
       }
 
       const userEmail = sessionData.user.email;
       if (!userEmail) {
+        console.log('[CALLBACK-TOKEN] ERROR: No email in user profile');
         return res.status(400).json({ error: 'No email found in user profile' });
       }
+
+      console.log('[CALLBACK-TOKEN] User email:', userEmail);
 
       // Get invite token from session
       const inviteToken = (req.session as any).inviteToken;
       delete (req.session as any).inviteToken;
+      console.log('[CALLBACK-TOKEN] Invite token:', inviteToken || 'none');
 
       // Check registration status
+      console.log('[CALLBACK-TOKEN] Checking user registration...');
       const result = await checkUserRegistration(userEmail, inviteToken);
+      console.log('[CALLBACK-TOKEN] Registration check result:', {
+        hasUser: !!result.user,
+        isPending: !!result.pending,
+        error: result.error,
+      });
       
       if (result.error) {
+        console.log('[CALLBACK-TOKEN] ERROR: Registration check failed:', result.error);
         return res.status(400).json({ error: result.error });
       }
 
       if (result.pending) {
         // New user needs to choose username
+        console.log('[CALLBACK-TOKEN] New user - setting up pending registration');
         (req.session as any).pendingRegistration = result.pending;
         (req.session as any).supabaseUserId = sessionData.user.id;
         (req.session as any).supabaseEmail = userEmail;
         
         // Create a temporary session so the user can complete registration
         // This allows the frontend to check for pending registration
+        console.log('[CALLBACK-TOKEN] Calling req.logIn for pending user...');
         req.logIn({ 
           id: sessionData.user.id, 
           email: userEmail,
           pendingRegistration: true 
         }, async (err) => {
           if (err) {
+            console.error('[CALLBACK-TOKEN] ERROR: req.logIn failed:', err);
             return res.status(500).json({ error: 'Failed to create session' });
           }
+          console.log('[CALLBACK-TOKEN] req.logIn successful, saving session...');
           // Explicitly save session to ensure it persists
           req.session.save((saveErr) => {
+            console.log('[CALLBACK-TOKEN] Session save attempt');
+            console.log('[CALLBACK-TOKEN] Save error:', saveErr);
+            console.log('[CALLBACK-TOKEN] Session ID after save:', req.sessionID);
             if (saveErr) {
-              console.error('Error saving session:', saveErr);
+              console.error('[CALLBACK-TOKEN] ERROR: Session save failed:', saveErr);
               return res.status(500).json({ error: 'Failed to save session' });
             }
+            console.log('[CALLBACK-TOKEN] SUCCESS: Session saved, redirecting to /?register=pending');
             return res.json({ redirect: '/?register=pending' });
           });
         });
@@ -291,27 +335,44 @@ export async function setupAuth(app: Express) {
       }
 
       // Existing user - get from database and log in
+      console.log('[CALLBACK-TOKEN] Existing user - looking up in database...');
       const dbUser = await storage.getUserByEmail(userEmail);
+      console.log('[CALLBACK-TOKEN] Database user lookup result:', dbUser ? {
+        id: dbUser.id,
+        email: dbUser.email,
+        username: dbUser.username,
+      } : 'null');
+      
       if (!dbUser) {
+        console.log('[CALLBACK-TOKEN] ERROR: User not found in database');
         return res.status(400).json({ error: 'User not found in database' });
       }
 
       // Use the database user as-is - don't try to sync IDs
       // The database user ID is the source of truth
+      console.log('[CALLBACK-TOKEN] Calling req.logIn for existing user...');
       req.logIn({ ...dbUser, email: userEmail }, (err) => {
         if (err) {
+          console.error('[CALLBACK-TOKEN] ERROR: req.logIn failed:', err);
           return res.status(500).json({ error: 'Failed to create session' });
         }
+        console.log('[CALLBACK-TOKEN] req.logIn successful, saving session...');
         // Explicitly save session to ensure it persists
         req.session.save((saveErr) => {
+          console.log('[CALLBACK-TOKEN] Session save attempt');
+          console.log('[CALLBACK-TOKEN] Save error:', saveErr);
+          console.log('[CALLBACK-TOKEN] Session ID after save:', req.sessionID);
           if (saveErr) {
-            console.error('Error saving session:', saveErr);
+            console.error('[CALLBACK-TOKEN] ERROR: Session save failed:', saveErr);
             return res.status(500).json({ error: 'Failed to save session' });
           }
+          console.log('[CALLBACK-TOKEN] SUCCESS: Session saved, redirecting to /');
           return res.json({ redirect: '/' });
         });
       });
     } catch (err: any) {
+      console.error('[CALLBACK-TOKEN] EXCEPTION:', err);
+      console.error('[CALLBACK-TOKEN] Stack:', err.stack);
       return res.status(500).json({ error: err.message || 'Authentication failed' });
     }
   });

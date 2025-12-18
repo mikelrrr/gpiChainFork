@@ -38,11 +38,18 @@
       
       if (code) {
         // We have a code, redirect to server callback
+        console.log('[CALLBACK] Has code, redirecting to /api/callback');
         window.location.href = `/api/callback?code=${code}`;
       } else if (accessToken) {
         // We have tokens in fragment, need to exchange them
         // Send to server to handle
+        console.log('[CALLBACK] ===== Starting token exchange =====');
+        console.log('[CALLBACK] Access token present:', !!accessToken);
+        console.log('[CALLBACK] Refresh token present:', !!refreshToken);
+        console.log('[CALLBACK] Current URL:', window.location.href);
+        
         try {
+          console.log('[CALLBACK] Sending POST to /api/callback-token...');
           const res = await fetch('/api/callback-token', {
             method: 'POST',
             headers: {
@@ -56,17 +63,31 @@
             }),
           });
           
+          console.log('[CALLBACK] Response received');
+          console.log('[CALLBACK] Response status:', res.status);
+          console.log('[CALLBACK] Response statusText:', res.statusText);
+          console.log('[CALLBACK] Response headers:', Object.fromEntries(res.headers.entries()));
+          
           const data = await res.json();
+          console.log('[CALLBACK] Response data:', data);
           
           if (data.error) {
+            console.error('[CALLBACK] ERROR from server:', data.error);
             window.location.href = `/?error=${encodeURIComponent(data.error)}`;
           } else if (data.redirect) {
+            console.log('[CALLBACK] Redirecting to:', data.redirect);
             window.location.href = data.redirect;
           } else {
+            console.log('[CALLBACK] No redirect specified, going to /');
             window.location.href = '/';
           }
         } catch (err) {
-          console.error('Callback error:', err);
+          console.error('[CALLBACK] EXCEPTION during fetch:', err);
+          console.error('[CALLBACK] Error details:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name,
+          });
           window.location.href = `/?error=${encodeURIComponent('Authentication failed')}`;
         }
       } else {
